@@ -278,8 +278,8 @@ class vertex:
 
     def ndc_to_screen(self, width:int, height:int) -> "vertex":
         result = vertex(0, 0)
-        result.x = round((self.x + 1) * 0.5 * width)
-        result.y = round((1 - (self.y + 1) * 0.5) * height)
+        result.x = int(round((self.x + 1) * 0.5 * width))
+        result.y = int(round((1 - (self.y + 1) * 0.5) * height))
         return result
 
 
@@ -347,14 +347,87 @@ class line2d:
                 self.drawhigh(grid, self.y0, self.x0, self.y1, self.x1, c)
 
 
-class triangle2d:
-    def __init__(self, y0:int, x0:int, y1:int, x1:int, y2:int, x2:int):
-        self.y0 = y0
-        self.y1 = y1
-        self.x0 = x0
-        self.x1 = x1
-        self.y2 = y2
-        self.x2 = x2
+class triangle:
+    def __init__(self, v0:vertex, v1:vertex, v2:vertex):
+        self.v0 = v0
+        self.v1 = v1
+        self.v2 = v2
+
+    def is_inside(self, p:vertex) -> bool:
+        ccw = True
+        ccw = ccw and edge_ccw(self.v0, self.v1, p)
+        ccw = ccw and edge_ccw(self.v1, self.v2, p)
+        ccw = ccw and edge_ccw(self.v2, self.v0, p)
+        cw = True
+        cw = cw and edge_cw(self.v0, self.v1, p)
+        cw = cw and edge_cw(self.v1, self.v2, p)
+        cw = cw and edge_cw(self.v2, self.v0, p)
+        return cw or ccw
+    
+    def barycentric(self, p:vertex) -> vector_3:
+        result = vector_3(0, 0, 0)
+        area = edge_ccw(self.v0, self.v1, self.v2)
+        result.x = edge_ccw(self.v1, self.v2, p)
+        result.y = edge_ccw(self.v2, self.v0, p)
+        result.z = edge_ccw(self.v0, self.v1, p)
+        if result.x >= 0 and result.y >= 0 and result.z >= 0:
+            result.x = result.x/area
+            result.y = result.y/area
+            result.z = result.z/area
+        return result
+    
+    def rasterize(self, grid:grid, c:str=" # "):
+        xmin = min(self.v0.x, self.v1.x, self.v2.x)
+        xmax = max(self.v0.x, self.v1.x, self.v2.x)
+        ymin = min(self.v0.y, self.v1.y, self.v2.y)
+        ymax = max(self.v0.y, self.v1.y, self.v2.y)
+        if xmin >= 0 and xmax <= grid.w and ymin >= 0 and ymax <= grid.h:
+            for j in range(ymin, ymax):
+                for i in range(xmin, xmax):
+                    p = vertex(j, i)
+                    if triangle.is_inside(self, p):
+                        p.draw(grid, c)
+
+
+def bresenham(x0:int, y0:int, x1:int, y1:int):
+    """Yield integer coordinates on the line from (x0, y0) to (x1, y1).
+
+    Input coordinates should be integers.
+
+    The result will contain both the start and the end point.
+    """
+    dx = x1 - x0
+    dy = y1 - y0
+
+    xsign = 1 if dx > 0 else -1
+    ysign = 1 if dy > 0 else -1
+
+    dx = abs(dx)
+    dy = abs(dy)
+
+    if dx > dy:
+        xx, xy, yx, yy = xsign, 0, 0, ysign
+    else:
+        dx, dy = dy, dx
+        xx, xy, yx, yy = 0, ysign, xsign, 0
+
+    D = 2*dy - dx
+    y = 0
+
+    for x in range(dx + 1):
+        yield x0 + x*xx + y*yx, y0 + x*xy + y*yy
+        if D >= 0:
+            y += 1
+            D -= 2*dx
+        D += 2*dy
+
+
+def edge_ccw(a:vertex, b:vertex, p:vertex) -> bool:
+    return ((a.x - b.x) * (p.y - a.y) - (a.y - b.y) * (p.x - a.x) >= 0);
+
+
+def edge_cw(a:vertex, b:vertex, p:vertex) -> bool:
+    return ((p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x) >= 0);
 
 
 def deg_to_rad(a:float) -> float:
@@ -368,14 +441,6 @@ def render(grid:grid):
             print(grid.get(i, j), end="")
         print("")
 
-main = grid(30, 30, " . ")
-"""
-main.set(9, 13)
-
-l = line2d(17, 17, 8, 3)
-l.draw(main)
-"""
-
 
 def get_input() -> str:
     while True:
@@ -384,24 +449,59 @@ def get_input() -> str:
             return key
 
 
+main = grid(30, 30, " . ")
+
 points = []
-points.append(vector_4(-1, -1, -1, 1))
-points.append(vector_4(-1, -1, 1, 1))
-points.append(vector_4(-1, 1, -1, 1))
-points.append(vector_4(-1, 1, 1, 1))
 points.append(vector_4(1, -1, -1, 1))
 points.append(vector_4(1, -1, 1, 1))
+points.append(vector_4(-1, -1, 1, 1))
+points.append(vector_4(-1, -1, -1, 1))
 points.append(vector_4(1, 1, -1, 1))
 points.append(vector_4(1, 1, 1, 1))
+points.append(vector_4(-1, 1, 1, 1))
+points.append(vector_4(-1, 1, -1, 1))
+
+edges = [(0, 1), (1, 2), (2, 3), (3, 0),
+         (4, 5), (5, 6), (6, 7), (7, 4),
+         (0, 4), (1, 5), (2, 6), (3, 7)]
+
+
+triangles = [(3, 2, 1), (4, 3, 1), #bottom
+             (5, 6, 7), (5, 7, 8), #top
+             (5, 1, 2), (6, 5, 2), #right
+             (3, 4, 8), (3, 8, 7), #left
+             (4, 1, 5), (4, 5, 8), #front
+             (7, 3, 2), (6, 7, 2)] #back
+
+projected = [vertex(0, 0) for _ in range(len(points))]
 
 while True:
     os.system("cls")
+    n = 0
     for p in points:
         temp = p.project(30, 30, math.pi/2, 1, 20)
         point = temp.normalize()
         point = point.ndc_to_screen(30, 30)
+        projected[n] = point
+        n += 1
         print(f"{point.x}; {point.y} | {p.x}; {p.y}; {p.z}")
         point.draw(main)
+
+    for i, j in edges:
+        x0, y0 = projected[i].x, projected[i].y
+        x1, y1 = projected[j].x, projected[j].y
+        if all(isinstance(i, int) for i in [x0, y0, x1, y1]) and x0 < main.w and y0 < main.h and x1 < main.w and y1 < main.h and x0 >= 0 and y0 >= 0 and x1 >= 0 and y1 >= 0:
+            coords = list(bresenham(x0, y0, x1, y1))
+            for coord in coords:
+                point = vertex(coord[1], coord[0])
+                point.draw(main)
+
+    for i, j, k in triangles:
+        v0 = projected[i-1]
+        v1 = projected[j-1]
+        v2 = projected[k-1]
+        tri = triangle(v0, v1, v2)
+        tri.rasterize(main)
 
     render(main)
     main.clear()
@@ -414,16 +514,16 @@ while True:
             p.z += 0.1
     elif key == "a":
         for p in points:
-            p.x -= 0.1
+            p.x += 0.1
     elif key == "d":
         for p in points:
-            p.x += 0.1
+            p.x -= 0.1
     elif key == "q":
         for p in points:
-            p.y -= 0.1
+            p.y += 0.1
     elif key == "e":
         for p in points:
-            p.y += 0.1
+            p.y -= 0.1
     elif key == "o":
         angle = deg_to_rad(1)
         for i, p in enumerate(points):
